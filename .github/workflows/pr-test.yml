@@ -1,5 +1,5 @@
 name: "PR test"
-on: pull_request
+on: [pull_request, push]
 
 jobs:
   unit-test-with-asan:
@@ -19,3 +19,15 @@ jobs:
 
       - name: "run unit tests"
         run: make unittest ASAN=1
+
+  pre-commit-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "check out uftrace source"
+        uses: actions/checkout@v3
+
+      - name: "install dependencies"
+        uses: actions/setup-python@v3
+
+      - name: "run pre-commit"
+        uses: pre-commit/action@v3.0.0
