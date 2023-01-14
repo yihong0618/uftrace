@@ -249,7 +249,6 @@ static void write_symtab(const char *dirname)
 	fclose(fp);
 
 	munmap(symtab, UFTRACE_PYTHON_SYMTAB_SIZE);
-	close(shm_fd);
 }
 
 static void init_uftrace(void)
