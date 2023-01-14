@@ -787,6 +787,39 @@ out:
 	return ret;
 }
 
+void load_python_symtab(struct uftrace_sym_info *sinfo)
+{
+	char *symfile = NULL;
+	struct uftrace_mmap *map;
+
+	/* try to load python symtab (if exists) */
+	xasprintf(&symfile, "%s/%s.sym", sinfo->dirname, PYTHON_MODULE_NAME);
+	if (access(symfile, R_OK) < 0) {
+		free(symfile);
+		return;
+	}
+
+	/* add a fake map for python script */
+	map = xzalloc(sizeof(*map) + sizeof(PYTHON_MODULE_NAME));
+
+	map->start = 0;
+	map->end = 4096;
+	map->len = 8;
+
+	memcpy(map->prot, "rwxp", 4);
+	strcpy(map->libname, PYTHON_MODULE_NAME);
+
+	map->mod = load_module_symtab(sinfo, PYTHON_MODULE_NAME, "python-buildid");
+
+	setup_debug_info(symfile, &map->mod->dinfo, 0, false);
+
+	/* add new map to symtabs */
+	map->next = sinfo->maps;
+	sinfo->maps = map;
+
+	free(symfile);
+}
+
 enum uftrace_trace_type check_trace_functions(const char *filename)
 {
 	struct uftrace_elf_data elf;
