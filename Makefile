@@ -195,7 +195,7 @@ BENCH_SRCS := $(srcdir)/misc/bench.c
 BENCH_OBJS := $(patsubst $(srcdir)/%.c,$(objdir)/%.o,$(BENCH_SRCS))
 
 PYTHON_SRCS := $(srcdir)/misc/trace-python.c $(srcdir)/utils/debug.c
-PYTHON_SRCS += $(srcdir)/utils/utils.c
+PYTHON_SRCS += $(srcdir)/utils/utils.c $(srcdir)/utils/rbtree.c
 PYTHON_SRCS += $(wildcard $(srcdir)/utils/symbol-*.c)
 PYTHON_OBJS := $(patsubst $(srcdir)/%.c,$(objdir)/%.op,$(PYTHON_SRCS))
 
