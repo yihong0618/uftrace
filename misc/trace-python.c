@@ -1,5 +1,7 @@
 #include <Python.h>
 
+#include "uftrace.h"
+#include "utils/rbtree.h"
 #include "utils/symbol.h"
 
 struct uftrace_py_state {
@@ -8,6 +10,18 @@ struct uftrace_py_state {
 
 /* pointer to python tracing function (for libpython2.7) */
 static PyObject *uftrace_func __attribute__((unused));
+
+/* RB tree of python_symbol to map function name to address */
+static struct rb_root name_tree = RB_ROOT;
+
+/* simple sequence number to be used as symbol address */
+static unsigned sym_num = 1;
+
+struct uftrace_python_symbol {
+	struct rb_node node;
+	unsigned int addr;
+	char *name;
+};
 
 static void (*cygprof_enter)(unsigned long child, unsigned long parent);
 static void (*cygprof_exit)(unsigned long child, unsigned long parent);
@@ -70,6 +84,102 @@ static void find_libmcount_funcs(void)
 	}
 
 	free(line);
+	fclose(fp);
+}
+
+/* manage function name -> address (or index) */
+static unsigned long find_function(struct rb_root *root, const char *name)
+{
+	struct rb_node *parent = NULL;
+	struct rb_node **p = &root->rb_node;
+	struct uftrace_python_symbol *iter, *new;
+	int cmp;
+
+	while (*p) {
+		parent = *p;
+		iter = rb_entry(parent, struct uftrace_python_symbol, node);
+
+		cmp = strcmp(iter->name, name);
+		if (cmp == 0)
+			return iter->addr;
+
+		if (cmp < 0)
+			p = &parent->rb_left;
+		else
+			p = &parent->rb_right;
+	}
+
+	new = xmalloc(sizeof(*new));
+	new->name = xstrdup(name);
+	new->addr = sym_num++;
+
+	rb_link_node(&new->node, parent, p);
+	rb_insert_color(&new->node, root);
+
+	return new->addr;
+}
+
+/* resort symbol table by address */
+static void sort_address(struct rb_root *root, struct uftrace_python_symbol *entry)
+{
+	struct rb_node *parent = NULL;
+	struct rb_node **p = &root->rb_node;
+	struct uftrace_python_symbol *iter;
+	int cmp;
+
+	while (*p) {
+		parent = *p;
+		iter = rb_entry(parent, struct uftrace_python_symbol, node);
+
+		cmp = iter->addr - entry->addr;
+		if (cmp > 0)
+			p = &parent->rb_left;
+		else
+			p = &parent->rb_right;
+	}
+
+	rb_link_node(&entry->node, parent, p);
+	rb_insert_color(&entry->node, root);
+}
+
+static void write_symtab(const char *dirname)
+{
+	struct rb_node *node;
+	struct rb_root addr_tree = RB_ROOT;
+	struct uftrace_python_symbol *sym;
+	char *filename = NULL;
+	FILE *fp;
+
+	xasprintf(&filename, "%s/%s.sym", dirname, PYTHON_MODULE_NAME);
+
+	fp = fopen(filename, "a");
+	if (fp == NULL) {
+		pr_warn("writing symbol table of python program failed: %m");
+		return;
+	}
+
+	/* symbol table assumes it's sorted by address */
+	while (!RB_EMPTY_ROOT(&name_tree)) {
+		node = rb_first(&name_tree);
+		rb_erase(node, &name_tree);
+
+		/* move it from name_tree to addr_tree */
+		sym = rb_entry(node, struct uftrace_python_symbol, node);
+		sort_address(&addr_tree, sym);
+	}
+
+	while (!RB_EMPTY_ROOT(&addr_tree)) {
+		node = rb_first(&addr_tree);
+		rb_erase(node, &addr_tree);
+
+		sym = rb_entry(node, struct uftrace_python_symbol, node);
+		fprintf(fp, "%x %c %s\n", sym->addr, 't', sym->name);
+
+		free(sym->name);
+		free(sym);
+	}
+
+	fprintf(fp, "%x %c %s\n", sym_num, 't', "__sym_end");
 	fclose(fp);
 }
 
@@ -140,6 +250,11 @@ static PyObject *get_trace_function(void)
 	return state->trace_func;
 }
 
+static char *get_c_string(PyObject *utf8)
+{
+	return (char *)PyUnicode_AsUTF8(utf8);
+}
+
 /* the name should be 'PyInit_' + <module name> */
 PyMODINIT_FUNC PyInit_uftrace_python(void)
 {
@@ -192,7 +307,59 @@ static PyObject *get_trace_function(void)
 	return uftrace_func;
 }
 
+static char *get_c_string(PyObject *str)
+{
+	return (char *)PyString_AsString(str);
+}
+
 #endif /* HAVE_LIBPYTHON2 */
+
+static unsigned long convert_function_addr(PyObject *frame)
+{
+	PyObject *code, *name, *global;
+	char *func_name = NULL;
+	unsigned long addr = 0;
+	bool needs_free = false;
+
+	code = PyObject_GetAttrString(frame, "f_code");
+	if (code == NULL)
+		return 0;
+
+	if (PyObject_HasAttrString(code, "co_qualname"))
+		name = PyObject_GetAttrString(code, "co_qualname");
+	else
+		name = PyObject_GetAttrString(code, "co_name");
+
+	/* prepend module name if available */
+	global = PyObject_GetAttrString(frame, "f_globals");
+	if (global) {
+		PyObject *mod = PyDict_GetItemString(global, "__name__");
+		char *name_str = get_c_string(name);
+
+		if (mod) {
+			char *mod_str = get_c_string(mod);
+
+			/* skip __main__. prefix for functions in the main module */
+			if (strcmp(mod_str, "__main__") || !strcmp(name_str, "<module>")) {
+				xasprintf(&func_name, "%s.%s", mod_str, name_str);
+				needs_free = true;
+			}
+		}
+		Py_XDECREF(mod);
+		Py_DECREF(global);
+	}
+
+	if (func_name == NULL && name)
+		func_name = get_c_string(name);
+	if (func_name)
+		addr = find_function(&name_tree, func_name);
+
+	if (needs_free)
+		free(func_name);
+	Py_XDECREF(code);
+	Py_XDECREF(name);
+	return addr;
+}
 
 /*
  * This is the actual function when called for each function.
@@ -205,13 +372,25 @@ static PyObject *uftrace_trace_python(PyObject *self, PyObject *args)
 	if (!PyArg_ParseTuple(args, "OsO", &frame, &event, &args_tuple))
 		Py_RETURN_NONE;
 
-	if (!strcmp(event, "line"))
-		Py_RETURN_NONE;
+	if (!strcmp(event, "call")) {
+		unsigned long addr;
 
-	if (!strcmp(event, "call"))
-		cygprof_enter(1, 2);
+		addr = convert_function_addr(frame);
+		cygprof_enter(addr, 0);
+	}
 	else if (!strcmp(event, "return"))
-		cygprof_exit(1, 2);
+		cygprof_exit(0, 0);
 
 	return get_trace_function();
+}
+
+static void __attribute__((destructor)) uftrace_trace_python_finish(void)
+{
+	const char *dirname;
+
+	dirname = getenv("UFTRACE_DIR");
+	if (dirname == NULL)
+		dirname = UFTRACE_DIR_NAME;
+
+	write_symtab(dirname);
 }
