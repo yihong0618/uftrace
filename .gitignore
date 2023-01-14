@@ -47,3 +47,4 @@ misc/demangler
 misc/symbols
 misc/dbginfo
 misc/bench
+misc/uftrace_python.so
