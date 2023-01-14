@@ -336,6 +336,7 @@ static unsigned long convert_function_addr(PyObject *frame)
 		PyObject *mod = PyDict_GetItemString(global, "__name__");
 		char *name_str = get_c_string(name);
 
+		/* 'mod' is a borrowed reference */
 		if (mod) {
 			char *mod_str = get_c_string(mod);
 
@@ -345,7 +346,6 @@ static unsigned long convert_function_addr(PyObject *frame)
 				needs_free = true;
 			}
 		}
-		Py_XDECREF(mod);
 		Py_DECREF(global);
 	}
 

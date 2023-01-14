@@ -1,4 +1,5 @@
 TEST_CFLAGS  += -g -include $(srcdir)/tests/unittest.h -Wno-sign-compare
+TEST_CFLAGS  += $(CFLAGS_$@)
 
 UNIT_TEST_SRC := $(srcdir)/uftrace.c
 UNIT_TEST_SRC += $(wildcard $(srcdir)/cmds/*.c)
@@ -17,6 +18,8 @@ UNIT_TEST_HDR += $(wildcard $(srcdir)/libmcount/*.h)
 UNIT_TEST_OBJ_VERSION := $(objdir)/cmds/script.ot $(objdir)/cmds/tui.ot
 UNIT_TEST_OBJ_VERSION += $(objdir)/cmds/dump.ot   $(objdir)/cmds/info.ot
 UNIT_TEST_OBJ_VERSION += $(objdir)/libmcount/mcount.ot
+
+CFLAGS_$(objdir)/cmds/record.ot = -DPYTHON_DIR='"$(srcdir)/misc"'
 
 FULL_WORKER := -j $(shell getconf _NPROCESSORS_ONLN || echo 1)
 
