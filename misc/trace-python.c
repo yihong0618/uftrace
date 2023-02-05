@@ -522,9 +522,16 @@ static unsigned long convert_function_addr(PyObject *frame, PyObject *args, bool
 static PyObject *uftrace_trace_python(PyObject *self, PyObject *args)
 {
 	PyObject *frame, *args_tuple;
+	static PyObject *first_frame;
 	const char *event;
 
 	if (!PyArg_ParseTuple(args, "OsO", &frame, &event, &args_tuple))
+		Py_RETURN_NONE;
+
+	if (first_frame == NULL)
+		first_frame = frame;
+	/* skip the first frame: builtins.exec() */
+	if (frame == first_frame)
 		Py_RETURN_NONE;
 
 	if (!strcmp(event, "call") || !strcmp(event, "c_call")) {
