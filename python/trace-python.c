@@ -96,7 +96,11 @@ struct uftrace_python_symbol {
 	PyObject *code;
 	char *name;
 	uint32_t addr;
+	uint32_t flag;
 };
+
+/* struct uftrace_python_symbol flags */
+#define UFT_PYSYM_F_LIBCALL (1U << 0)
 
 /* linked list of filter names */
 static LIST_HEAD(filters);
@@ -698,10 +702,11 @@ static char *get_c_string(PyObject *str)
 
 #endif /* HAVE_LIBPYTHON2 */
 
-static char *get_python_funcname(PyObject *frame, PyObject *code)
+static char *get_python_funcname(PyObject *frame, PyObject *code, bool *is_main)
 {
 	PyObject *name, *global;
 	char *func_name = NULL;
+	bool main = false;
 
 	if (PyObject_HasAttrString(code, "co_qualname"))
 		name = PyObject_GetAttrString(code, "co_qualname");
@@ -719,11 +724,14 @@ static char *get_python_funcname(PyObject *frame, PyObject *code)
 			char *mod_str = get_c_string(mod);
 
 			/* skip __main__. prefix for functions in the main module */
-			if (strcmp(mod_str, "__main__") || !strcmp(name_str, "<module>"))
+			if (!strcmp(mod_str, "__main__"))
+				main = true;
+			if (!main || !strcmp(name_str, "<module>"))
 				xasprintf(&func_name, "%s.%s", mod_str, name_str);
 		}
 		Py_DECREF(global);
 	}
+	*is_main = main;
 
 	if (func_name == NULL && name)
 		func_name = strdup(get_c_string(name));
@@ -770,6 +778,7 @@ static struct uftrace_python_symbol *convert_function_addr(PyObject *frame, PyOb
 	struct uftrace_python_symbol *iter, *new_sym;
 	PyObject *code;
 	char *func_name;
+	bool is_main = false;
 
 	code = PyObject_GetAttrString(frame, "f_code");
 	if (code == NULL)
@@ -797,7 +806,7 @@ static struct uftrace_python_symbol *convert_function_addr(PyObject *frame, PyOb
 	}
 
 	if (is_pyfunc)
-		func_name = get_python_funcname(frame, code);
+		func_name = get_python_funcname(frame, code, &is_main);
 	else
 		func_name = get_c_funcname(frame, code);
 
@@ -808,6 +817,7 @@ static struct uftrace_python_symbol *convert_function_addr(PyObject *frame, PyOb
 	new_sym->code = code;
 	new_sym->addr = get_new_sym_addr(func_name, is_pyfunc);
 	new_sym->name = func_name;
+	new_sym->flag = is_main ? 0 : UFT_PYSYM_F_LIBCALL;
 
 	if (need_dbg_info) {
 		if (PyObject_HasAttrString(code, "co_filename") &&
