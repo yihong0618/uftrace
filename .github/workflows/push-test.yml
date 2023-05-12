@@ -1,9 +1,19 @@
 name: "Push test"
 on: push
 
+concurrency:
+  group: ${{ github.event.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   unit-test-with-asan:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - x86_64
+          - aarch64
     steps:
       - name: "checkout"
         uses: actions/checkout@v3
