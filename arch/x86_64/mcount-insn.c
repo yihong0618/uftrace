@@ -478,7 +478,6 @@ static int check_instrumentable(struct mcount_disasm_engine *disasm, cs_insn *in
 			return INSTRUMENT_FAIL_NO_DETAIL;
 		default:
 			/* do nothing for legit instructions. */
-			break;
 		}
 	}
 
