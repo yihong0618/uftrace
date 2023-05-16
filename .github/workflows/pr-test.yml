@@ -7,13 +7,13 @@ concurrency:
 
 jobs:
   unit-test-with-asan:
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         arch:
           - x86_64
           - aarch64
+    runs-on: ubuntu-latest
     steps:
       - name: "checkout"
         uses: actions/checkout@v3

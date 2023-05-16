@@ -15,6 +15,10 @@ jobs:
           - x86_64
           - aarch64
     steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: ${{ matrix.arch }}
       - name: "checkout"
         uses: actions/checkout@v3
 
@@ -22,7 +26,9 @@ jobs:
         run: sudo ./misc/install-deps.sh -y
 
       - name: "configure build env"
-        run: ./configure
+        run: |
+          uanme -a
+          ./configure
 
       - name: "build the source"
         run: make ASAN=1
