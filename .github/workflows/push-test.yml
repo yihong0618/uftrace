@@ -26,9 +26,7 @@ jobs:
         run: sudo ./misc/install-deps.sh -y
 
       - name: "configure build env"
-        run: |
-          uanme -a
-          ./configure
+        run: ./configure
 
       - name: "build the source"
         run: make ASAN=1
