@@ -24,6 +24,10 @@ jobs:
 
       - name: "install dependencies"
         run: sudo ./misc/install-deps.sh -y
+      
+      - name: "TEST"
+        run:
+          uname -a
 
       - name: "configure build env"
         run: ./configure
